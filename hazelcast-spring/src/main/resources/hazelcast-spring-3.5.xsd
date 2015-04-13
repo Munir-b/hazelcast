@@ -846,6 +846,7 @@
                         </xs:element>
                         <xs:element name="listeners" type="listeners" minOccurs="0" maxOccurs="1"/>
                         <xs:element name="serialization" type="serialization" minOccurs="0" maxOccurs="1"/>
+                        <xs:element name="native-memory" type="native-memory" minOccurs="0" maxOccurs="1"/>
                         <xs:element name="security" type="security" minOccurs="0" maxOccurs="1"/>
                         <xs:element name="member-attributes" minOccurs="0" maxOccurs="1">
                             <xs:complexType>
@@ -996,7 +997,7 @@
     <xs:element name="map" type="hazelcast-type">
         <xs:annotation>
             <xs:documentation>
-                Retrive an hazelcast IMap instance
+                Retrieve a Hazelcast IMap instance
             </xs:documentation>
             <xs:appinfo>
                 <tool:annotation>
@@ -1008,7 +1009,7 @@
     <xs:element name="multiMap" type="hazelcast-type">
         <xs:annotation>
             <xs:documentation>
-                Retrive an hazelcast MultiMap instance
+                Retrieve a Hazelcast MultiMap instance
             </xs:documentation>
             <xs:appinfo>
                 <tool:annotation>
@@ -1017,10 +1018,22 @@
             </xs:appinfo>
         </xs:annotation>
     </xs:element>
+    <xs:element name="replicatedMap" type="hazelcast-type">
+        <xs:annotation>
+            <xs:documentation>
+                Retrieve a Hazelcast ReplicatedMap instance
+            </xs:documentation>
+            <xs:appinfo>
+                <tool:annotation>
+                    <tool:exports type="com.hazelcast.core.ReplicatedMap"/>
+                </tool:annotation>
+            </xs:appinfo>
+        </xs:annotation>
+    </xs:element>
     <xs:element name="queue" type="hazelcast-type">
         <xs:annotation>
             <xs:documentation>
-                Retrive an hazelcast IQueue instance
+                Retrieve a Hazelcast IQueue instance
             </xs:documentation>
             <xs:appinfo>
                 <tool:annotation>
@@ -1032,7 +1045,7 @@
     <xs:element name="topic" type="hazelcast-type">
         <xs:annotation>
             <xs:documentation>
-                Retrive an hazelcast ITopic instance
+                Retrieve a Hazelcast ITopic instance
             </xs:documentation>
             <xs:appinfo>
                 <tool:annotation>
@@ -1044,7 +1057,7 @@
     <xs:element name="set" type="hazelcast-type">
         <xs:annotation>
             <xs:documentation>
-                Retrive an hazelcast ISet instance
+                Retrieve a Hazelcast ISet instance
             </xs:documentation>
             <xs:appinfo>
                 <tool:annotation>
@@ -1056,7 +1069,7 @@
     <xs:element name="list" type="hazelcast-type">
         <xs:annotation>
             <xs:documentation>
-                Retrive an hazelcast IList instance
+                Retrieve a Hazelcast IList instance
             </xs:documentation>
             <xs:appinfo>
                 <tool:annotation>
@@ -1068,7 +1081,7 @@
     <xs:element name="executorService" type="hazelcast-type">
         <xs:annotation>
             <xs:documentation>
-                Retrive an hazelcast IExecutorService instance
+                Retrieve a Hazelcast IExecutorService instance
             </xs:documentation>
             <xs:appinfo>
                 <tool:annotation>
@@ -1080,7 +1093,7 @@
     <xs:element name="idGenerator" type="hazelcast-type">
         <xs:annotation>
             <xs:documentation>
-                Retrive an hazelcast IdGenerator instance
+                Retrieve a Hazelcast IdGenerator instance
             </xs:documentation>
             <xs:appinfo>
                 <tool:annotation>
@@ -1092,7 +1105,7 @@
     <xs:element name="atomicLong" type="hazelcast-type">
         <xs:annotation>
             <xs:documentation>
-                Retrive an hazelcast IAtomicLong instance
+                Retrieve a Hazelcast IAtomicLong instance
             </xs:documentation>
             <xs:appinfo>
                 <tool:annotation>
@@ -1104,7 +1117,7 @@
     <xs:element name="atomicReference" type="hazelcast-type">
         <xs:annotation>
             <xs:documentation>
-                Retrive an hazelcast IAtomicReference instance
+                Retrieve a Hazelcast IAtomicReference instance
             </xs:documentation>
             <xs:appinfo>
                 <tool:annotation>
@@ -1116,7 +1129,7 @@
     <xs:element name="countDownLatch" type="hazelcast-type">
         <xs:annotation>
             <xs:documentation>
-                Retrive an hazelcast ICountDownLatch instance
+                Retrieve a Hazelcast ICountDownLatch instance
             </xs:documentation>
             <xs:appinfo>
                 <tool:annotation>
@@ -1128,7 +1141,7 @@
     <xs:element name="semaphore" type="hazelcast-type">
         <xs:annotation>
             <xs:documentation>
-                Retrive an hazelcast ISemaphore instance
+                Retrieve a Hazelcast ISemaphore instance
             </xs:documentation>
             <xs:appinfo>
                 <tool:annotation>
@@ -1140,7 +1153,7 @@
     <xs:element name="lock" type="hazelcast-type">
         <xs:annotation>
             <xs:documentation>
-                Retrive an hazelcast ILock instance
+                Retrieve a Hazelcast ILock instance
             </xs:documentation>
             <xs:appinfo>
                 <tool:annotation>
@@ -1783,7 +1796,7 @@
         <xs:attribute name="redo-operation" use="optional" type="xs:boolean" default="false"/>
         <xs:attribute name="connection-timeout" use="optional" type="intMin1" default="60000"/>
         <xs:attribute name="connection-attempt-period" use="optional" type="intMin1" default="3000"/>
-        <xs:attribute name="connection-attempt-limit" use="optional" type="intMin1" default="2"/>
+        <xs:attribute name="connection-attempt-limit" use="optional" type="intMin0" default="2"/>
     </xs:complexType>
 
     <xs:complexType name="socket-options">
@@ -1830,6 +1843,9 @@
 
     <xs:simpleType name="intMin1">
         <xs:union memberTypes="xs:positiveInteger parameterizedValueType"/>
+    </xs:simpleType>
+    <xs:simpleType name="intMin0">
+        <xs:union memberTypes="xs:nonNegativeInteger parameterizedValueType"/>
     </xs:simpleType>
 
     <xs:complexType name="listeners">
@@ -1965,5 +1981,43 @@
     <xs:complexType name="wan-replication-ref">
         <xs:attribute name="name" use="required" type="xs:string"/>
         <xs:attribute name="merge-policy" use="required" type="xs:string"/>
+        <xs:attribute name="republishing-enabled" use="optional" type="xs:boolean" default="true"/>
     </xs:complexType>
+    <xs:complexType name="native-memory">
+        <xs:all>
+            <xs:element name="size" type="memory-size" minOccurs="0" maxOccurs="1"/>
+        </xs:all>
+        <xs:attribute name="min-block-size"  use="optional" type="xs:positiveInteger"/>
+        <xs:attribute name="page-size" use="optional" type="xs:positiveInteger"/>
+        <xs:attribute name="metadata-space-percentage" use="optional">
+            <xs:simpleType>
+                <xs:restriction base="xs:decimal">
+                    <xs:totalDigits value="3"/>
+                    <xs:fractionDigits value="1"/>
+                    <xs:minInclusive value="5"/>
+                    <xs:maxInclusive value="95"/>
+                </xs:restriction>
+            </xs:simpleType>
+        </xs:attribute>
+        <xs:attribute name="allocator-type" default="POOLED" type="memory-allocator-type"/>
+        <xs:attribute name="enabled" default="true" type="xs:boolean"/>
+    </xs:complexType>
+    <xs:complexType name="memory-size">
+        <xs:attribute name="value" type="xs:int" default="128"/>
+        <xs:attribute name="unit" type="memory-unit" default="MEGABYTES"/>
+    </xs:complexType>
+    <xs:simpleType name="memory-unit">
+        <xs:restriction base="xs:string">
+            <xs:enumeration value="BYTES"/>
+            <xs:enumeration value="KILOBYTES"/>
+            <xs:enumeration value="MEGABYTES"/>
+            <xs:enumeration value="GIGABYTES"/>
+        </xs:restriction>
+    </xs:simpleType>
+    <xs:simpleType name="memory-allocator-type">
+        <xs:restriction base="xs:string">
+            <xs:enumeration value="STANDARD"/>
+            <xs:enumeration value="POOLED"/>
+        </xs:restriction>
+    </xs:simpleType>
 </xs:schema>

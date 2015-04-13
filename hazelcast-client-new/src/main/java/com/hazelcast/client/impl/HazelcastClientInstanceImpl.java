@@ -1,5 +1,6 @@
 package com.hazelcast.client.impl;
 
+import com.hazelcast.cache.impl.nearcache.NearCacheManager;
 import com.hazelcast.client.ClientExtension;
 import com.hazelcast.client.HazelcastClient;
 import com.hazelcast.client.LoadBalancer;
@@ -33,6 +34,7 @@ import com.hazelcast.client.spi.impl.DefaultAddressTranslator;
 import com.hazelcast.client.txn.ClientTransactionManager;
 import com.hazelcast.client.util.RoundRobinLB;
 import com.hazelcast.collection.impl.list.ListService;
+import com.hazelcast.collection.impl.queue.QueueService;
 import com.hazelcast.collection.impl.set.SetService;
 import com.hazelcast.concurrent.atomiclong.AtomicLongService;
 import com.hazelcast.concurrent.atomicreference.AtomicReferenceService;
@@ -76,7 +78,6 @@ import com.hazelcast.multimap.impl.MultiMapService;
 import com.hazelcast.nio.ClassLoaderUtil;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.nio.serialization.SerializationService;
-import com.hazelcast.collection.impl.queue.QueueService;
 import com.hazelcast.replicatedmap.impl.ReplicatedMapService;
 import com.hazelcast.security.Credentials;
 import com.hazelcast.security.UsernamePasswordCredentials;
@@ -101,6 +102,7 @@ public class HazelcastClientInstanceImpl implements HazelcastInstance {
 
     private static final AtomicInteger CLIENT_ID = new AtomicInteger();
     private static final ILogger LOGGER = Logger.getLogger(HazelcastClient.class);
+    private static final short protocolVersion = 1;
 
     private final ClientProperties clientProperties;
     private final int id = CLIENT_ID.getAndIncrement();
@@ -116,6 +118,7 @@ public class HazelcastClientInstanceImpl implements HazelcastInstance {
     private final ClientExecutionServiceImpl executionService;
     private final ClientListenerServiceImpl listenerService;
     private final ClientTransactionManager transactionManager;
+    private final NearCacheManager nearCacheManager;
     private final ProxyManager proxyManager;
     private final ConcurrentMap<String, Object> userContext;
     private final LoadBalancer loadBalancer;
@@ -144,8 +147,9 @@ public class HazelcastClientInstanceImpl implements HazelcastInstance {
         invocationService = initInvocationService();
         listenerService = initListenerService();
         userContext = new ConcurrentHashMap<String, Object>();
-        proxyManager.init(config);
+        nearCacheManager = clientExtension.createNearCacheManager();
 
+        proxyManager.init(config);
     }
 
     private LoadBalancer initLoadBalancer(ClientConfig config) {
@@ -402,7 +406,7 @@ public class HazelcastClientInstanceImpl implements HazelcastInstance {
 
     @Override
     public PartitionService getPartitionService() {
-        return new PartitionServiceProxy(partitionService);
+        return new PartitionServiceProxy(partitionService, listenerService);
     }
 
     @Override
@@ -471,6 +475,10 @@ public class HazelcastClientInstanceImpl implements HazelcastInstance {
         return listenerService;
     }
 
+    public NearCacheManager getNearCacheManager() {
+        return nearCacheManager;
+    }
+
     public ThreadGroup getThreadGroup() {
         return threadGroup;
     }
@@ -481,6 +489,10 @@ public class HazelcastClientInstanceImpl implements HazelcastInstance {
 
     public Credentials getCredentials() {
         return credentials;
+    }
+
+    public short getProtocolVersion() {
+        return protocolVersion;
     }
 
     @Override
@@ -497,5 +509,6 @@ public class HazelcastClientInstanceImpl implements HazelcastInstance {
         invocationService.shutdown();
         listenerService.shutdown();
         serializationService.destroy();
+        nearCacheManager.destroyAllNearCaches();
     }
 }

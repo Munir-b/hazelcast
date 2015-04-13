@@ -6,7 +6,6 @@ import com.hazelcast.nio.Address;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.Callback;
 import com.hazelcast.spi.InternalCompletableFuture;
-import com.hazelcast.spi.impl.operationservice.impl.responses.NormalResponse;
 import com.hazelcast.spi.impl.operationservice.impl.responses.Response;
 import com.hazelcast.util.Clock;
 import com.hazelcast.util.ExceptionUtil;
@@ -28,8 +27,8 @@ import static com.hazelcast.util.ValidationUtil.isNotNull;
 import static java.lang.Math.min;
 
 /**
- * The BasicInvocationFuture is the {@link com.hazelcast.spi.InternalCompletableFuture} that waits on the completion
- * of a {@link Invocation}. The BasicInvocation executes an operation.
+ * The InvocationFuture is the {@link com.hazelcast.spi.InternalCompletableFuture} that waits on the completion
+ * of a {@link Invocation}. The Invocation executes an operation.
  *
  * @param <E>
  */
@@ -37,27 +36,34 @@ final class InvocationFuture<E> implements InternalCompletableFuture<E> {
 
     private static final int MAX_CALL_TIMEOUT_EXTENSION = 60 * 1000;
 
-    private static final AtomicReferenceFieldUpdater<InvocationFuture, Object> RESPONSE_FIELD_UPDATER
+    private static final AtomicReferenceFieldUpdater<InvocationFuture, Object> RESPONSE
             = AtomicReferenceFieldUpdater.newUpdater(InvocationFuture.class, Object.class, "response");
-    private static final AtomicIntegerFieldUpdater<InvocationFuture> WAITER_COUNT_FIELD_UPDATER
+    private static final AtomicIntegerFieldUpdater<InvocationFuture> WAITER_COUNT
             = AtomicIntegerFieldUpdater.newUpdater(InvocationFuture.class, "waiterCount");
 
     volatile boolean interrupted;
+    volatile Object response;
+
     // Contains the number of threads waiting for a result from this future.
-    // is updated through the WAITER_COUNT_FIELD_UPDATER.
+    // is updated through the WAITER_COUNT.
     private volatile int waiterCount;
     private final OperationServiceImpl operationService;
     private final Invocation invocation;
     private volatile ExecutionCallbackNode<E> callbackHead;
-    private volatile Object response;
 
-    InvocationFuture(OperationServiceImpl operationService, Invocation invocation, final Callback<E> callback) {
+    InvocationFuture(OperationServiceImpl operationService, Invocation invocation, Object callback) {
         this.invocation = invocation;
         this.operationService = operationService;
 
         if (callback != null) {
-            ExecutorCallbackAdapter<E> adapter = new ExecutorCallbackAdapter<E>(callback);
-            callbackHead = new ExecutionCallbackNode<E>(adapter, operationService.asyncExecutor, null);
+            ExecutionCallback executionCallback;
+            if (callback instanceof ExecutionCallback) {
+                executionCallback = (ExecutionCallback) callback;
+            } else {
+                executionCallback = new ExecutorCallbackAdapter<E>((Callback) callback);
+            }
+
+            callbackHead = new ExecutionCallbackNode<E>(executionCallback, operationService.asyncExecutor, null);
         }
     }
 
@@ -75,13 +81,25 @@ final class InvocationFuture<E> implements InternalCompletableFuture<E> {
         isNotNull(executor, "executor");
 
         synchronized (this) {
-            if (response != null && !(response instanceof InternalResponse)) {
+            if (responseAvailable(response)) {
                 runAsynchronous(callback, executor);
                 return;
             }
 
             this.callbackHead = new ExecutionCallbackNode<E>(callback, executor, callbackHead);
         }
+    }
+
+    private boolean responseAvailable(Object response) {
+        if (response == null) {
+            return false;
+        }
+
+        if (response == InternalResponse.WAIT_RESPONSE) {
+            return false;
+        }
+
+        return true;
     }
 
     @Override
@@ -117,7 +135,7 @@ final class InvocationFuture<E> implements InternalCompletableFuture<E> {
      * Can be called multiple times, but only the first answer will lead to the future getting triggered. All subsequent
      * 'set' calls are ignored.
      *
-     * @param offeredResponse
+     * @param offeredResponse The type of response to offer.
      */
     public void set(Object offeredResponse) {
         assert !(offeredResponse instanceof Response) : "unexpected response found: " + offeredResponse;
@@ -129,14 +147,14 @@ final class InvocationFuture<E> implements InternalCompletableFuture<E> {
         ExecutionCallbackNode<E> callbackChain;
         synchronized (this) {
             if (response != null && !(response instanceof InternalResponse)) {
-                //it can be that this invocation future already received an answer, e.g. when a an invocation
+                //it can be that this invocation future already received an answer, e.g. when an invocation
                 //already received a response, but before it cleans up itself, it receives a
                 //HazelcastInstanceNotActiveException.
 
                 // this is no good; no logging while holding a lock
                 ILogger logger = invocation.logger;
                 if (logger.isFinestEnabled()) {
-                    logger.info("Future response is already set! Current response: "
+                    logger.finest("Future response is already set! Current response: "
                             + response + ", Offered response: " + offeredResponse + ", Invocation: " + invocation);
                 }
                 return;
@@ -149,9 +167,11 @@ final class InvocationFuture<E> implements InternalCompletableFuture<E> {
             callbackChain = callbackHead;
             callbackHead = null;
             notifyAll();
+
+            operationService.invocationsRegistry.deregister(invocation);
         }
 
-        operationService.invocationsRegistry.deregister(invocation);
+
         notifyCallbacks(callbackChain);
     }
 
@@ -190,11 +210,11 @@ final class InvocationFuture<E> implements InternalCompletableFuture<E> {
     }
 
     private Object waitForResponse(long time, TimeUnit unit) {
-        if (response != null && response != WAIT_RESPONSE) {
+        if (responseAvailable(response)) {
             return response;
         }
 
-        WAITER_COUNT_FIELD_UPDATER.incrementAndGet(this);
+        WAITER_COUNT.incrementAndGet(this);
         try {
             long timeoutMs = toTimeoutMs(time, unit);
             long maxCallTimeoutMs = getMaxCallTimeout();
@@ -213,7 +233,7 @@ final class InvocationFuture<E> implements InternalCompletableFuture<E> {
                     timeoutMs = decrementTimeout(timeoutMs, lastPollTime);
 
                     if (response == WAIT_RESPONSE) {
-                        RESPONSE_FIELD_UPDATER.compareAndSet(this, WAIT_RESPONSE, null);
+                        RESPONSE.compareAndSet(this, WAIT_RESPONSE, null);
                         continue;
                     } else if (response != null) {
                         //if the thread is interrupted, but the response was not an interrupted-response,
@@ -246,21 +266,22 @@ final class InvocationFuture<E> implements InternalCompletableFuture<E> {
             }
             return TIMEOUT_RESPONSE;
         } finally {
-            WAITER_COUNT_FIELD_UPDATER.decrementAndGet(this);
+            WAITER_COUNT.decrementAndGet(this);
         }
     }
 
-    private void pollResponse(final long pollTimeoutMs) throws InterruptedException {
+    private void pollResponse(long pollTimeoutMs) throws InterruptedException {
         //we should only wait if there is any timeout. We can't call wait with 0, because it is interpreted as infinite.
-        if (pollTimeoutMs > 0 && response == null) {
-            long currentTimeoutMs = pollTimeoutMs;
-            final long waitStart = Clock.currentTimeMillis();
-            synchronized (this) {
-                while (currentTimeoutMs > 0 && response == null) {
-                    wait(currentTimeoutMs);
-                    currentTimeoutMs = pollTimeoutMs - (Clock.currentTimeMillis() - waitStart);
-                }
-                notifyAll();
+        if (pollTimeoutMs <= 0 || response != null) {
+            return;
+        }
+
+        long currentTimeoutMs = pollTimeoutMs;
+        long waitStart = Clock.currentTimeMillis();
+        synchronized (this) {
+            while (currentTimeoutMs > 0 && response == null) {
+                wait(currentTimeoutMs);
+                currentTimeoutMs = pollTimeoutMs - (Clock.currentTimeMillis() - waitStart);
             }
         }
     }
@@ -272,10 +293,11 @@ final class InvocationFuture<E> implements InternalCompletableFuture<E> {
     }
 
     private static long getCallTimeoutExtension(long callTimeout) {
-        if (callTimeout > 0) {
-            return Math.min(callTimeout, MAX_CALL_TIMEOUT_EXTENSION);
+        if (callTimeout <= 0) {
+            return 0L;
         }
-        return 0L;
+
+        return Math.min(callTimeout, MAX_CALL_TIMEOUT_EXTENSION);
     }
 
     int getWaitingThreadsCount() {
@@ -340,23 +362,6 @@ final class InvocationFuture<E> implements InternalCompletableFuture<E> {
             }
         }
 
-        if (response instanceof NormalResponse) {
-            NormalResponse responseObj = (NormalResponse) response;
-            response = responseObj.getValue();
-
-            if (response == null) {
-                return null;
-            }
-
-            //it could be that the value of the response is Data.
-            if (invocation.resultDeserialized && response instanceof Data) {
-                response = invocation.nodeEngine.toObject(response);
-                if (response == null) {
-                    return null;
-                }
-            }
-        }
-
         if (response instanceof Throwable) {
             Throwable throwable = ((Throwable) response);
             if (invocation.remote) {
@@ -380,12 +385,12 @@ final class InvocationFuture<E> implements InternalCompletableFuture<E> {
 
     @Override
     public boolean isDone() {
-        return response != null;
+         return responseAvailable(response);
     }
 
     @Override
     public String toString() {
-        final StringBuilder sb = new StringBuilder("BasicInvocationFuture{");
+        StringBuilder sb = new StringBuilder("InvocationFuture{");
         sb.append("invocation=").append(invocation.toString());
         sb.append(", response=").append(response);
         sb.append(", done=").append(isDone());

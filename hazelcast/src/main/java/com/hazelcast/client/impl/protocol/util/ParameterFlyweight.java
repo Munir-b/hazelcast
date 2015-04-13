@@ -21,21 +21,19 @@ public class ParameterFlyweight
 
     private int index;
 
+    public ParameterFlyweight() {
+        super();
+    }
+
+    public ParameterFlyweight(ByteBuffer buffer, int offset) {
+        super(buffer,offset);
+    }
+
     public ParameterFlyweight wrap(final ByteBuffer buffer) {
         return wrap(buffer, 0);
     }
 
     public ParameterFlyweight wrap(final ByteBuffer buffer, final int offset) {
-        super.wrap(buffer, offset);
-        this.index = offset;
-        return this;
-    }
-
-    public ParameterFlyweight wrap(final MutableDirectBuffer buffer) {
-        return wrap(buffer, 0);
-    }
-
-    public ParameterFlyweight wrap(final MutableDirectBuffer buffer, final int offset) {
         super.wrap(buffer, offset);
         this.index = offset;
         return this;
@@ -53,6 +51,12 @@ public class ParameterFlyweight
     //region SET Overloads
     public ParameterFlyweight set(boolean value) {
         buffer.putByte(index, (byte) (value ? 1 : 0));
+        index += SIZE_OF_BYTE;
+        return this;
+    }
+
+    public ParameterFlyweight set(byte value) {
+        buffer.putByte(index, value);
         index += SIZE_OF_BYTE;
         return this;
     }
@@ -93,12 +97,15 @@ public class ParameterFlyweight
     }
 
     public ParameterFlyweight set(final byte[] value) {
-        final int length = value.length;
+        final int length = value != null ? value.length : 0;
         set(length);
-        buffer.putBytes(index, value);
-        index += length;
+        if(length > 0) {
+            buffer.putBytes(index, value);
+            index += length;
+        }
         return this;
     }
+
     //endregion SET Overloads
 
     //region GET Overloads
@@ -106,6 +113,13 @@ public class ParameterFlyweight
         byte result = buffer.getByte(index);
         index += SIZE_OF_BYTE;
         return result != 0;
+    }
+
+
+    public byte getByte() {
+        byte result = buffer.getByte(index);
+        index += SIZE_OF_BYTE;
+        return result;
     }
 
     public short getShort() {

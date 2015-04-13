@@ -29,7 +29,6 @@ import java.util.List;
 
 import static com.hazelcast.util.JsonUtil.getArray;
 import static com.hazelcast.util.JsonUtil.getLong;
-import static com.hazelcast.util.JsonUtil.getObject;
 
 /**
  * Hazelcast statistic implementations for local operations.
@@ -86,7 +85,6 @@ public class LocalOperationStatsImpl implements LocalOperationStats {
     public void fromJson(JsonObject json) {
         maxVisibleSlowOperationCount = getLong(json, "maxVisibleSlowOperationCount", Long.MAX_VALUE);
         for (JsonValue jsonValue : getArray(json, "slowOperations")) {
-            getObject(json, "operationServiceBean");
             SlowOperationDTO slowOperationDTO = new SlowOperationDTO();
             slowOperationDTO.fromJson(jsonValue.asObject());
             slowOperations.add(slowOperationDTO);

@@ -48,6 +48,8 @@ public final class WriteHandler extends AbstractSelectionHandler implements Runn
     private SocketWritable currentPacket;
     private SocketWriter socketWriter;
     private volatile long lastHandle;
+    //This field will be incremented by a single thread. It can be read by multiple threads.
+    private volatile long eventCount;
 
     WriteHandler(TcpIpConnection connection, IOSelector ioSelector) {
         super(connection, ioSelector, SelectionKey.OP_WRITE);
@@ -87,6 +89,8 @@ public final class WriteHandler extends AbstractSelectionHandler implements Runn
                 registerOp(SelectionKey.OP_WRITE);
             } else if (Protocols.CLIENT_BINARY.equals(protocol)) {
                 socketWriter = new SocketClientDataWriter();
+            } else if (Protocols.CLIENT_BINARY_NEW.equals(protocol)) {
+                socketWriter = new SocketClientDataWriterNew();
             } else {
                 socketWriter = new SocketTextWriter(connection);
             }
@@ -164,9 +168,7 @@ public final class WriteHandler extends AbstractSelectionHandler implements Runn
         }
 
         // since everything is written, we are not interested anymore in write-events, so lets unsubscribe
-        // TODO: We need to make sure the selection key is created in the beginning instead of doing it lazily
-        SelectionKey selectionKey = getSelectionKey();
-        selectionKey.interestOps(selectionKey.interestOps() & ~SelectionKey.OP_WRITE);
+        unregisterOp(SelectionKey.OP_WRITE);
         // So the outputBuffer is empty, so we are going to unschedule ourselves.
         scheduled.set(false);
 
@@ -189,9 +191,17 @@ public final class WriteHandler extends AbstractSelectionHandler implements Runn
         ioSelector.addTask(this);
     }
 
-    @SuppressWarnings("unchecked")
     @Override
+    public long getEventCount() {
+        return eventCount;
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    @edu.umd.cs.findbugs.annotations.SuppressWarnings(value = "VO_VOLATILE_INCREMENT",
+            justification = "eventCount is accessed by a single thread only.")
     public void handle() {
+        eventCount++;
         lastHandle = Clock.currentTimeMillis();
         if (!connection.isAlive()) {
             return;
@@ -211,7 +221,6 @@ public final class WriteHandler extends AbstractSelectionHandler implements Runn
         } catch (Throwable t) {
             logger.severe("Fatal Error at WriteHandler for endPoint: " + connection.getEndPoint(), t);
         }
-
         unschedule();
     }
 

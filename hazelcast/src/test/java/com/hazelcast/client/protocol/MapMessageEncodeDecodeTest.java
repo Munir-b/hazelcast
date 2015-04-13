@@ -1,8 +1,9 @@
 package com.hazelcast.client.protocol;
 
 import com.hazelcast.client.impl.protocol.ClientMessage;
-import com.hazelcast.client.impl.protocol.map.MapPutParameters;
-import com.hazelcast.client.impl.protocol.util.ParameterFlyweight;
+import com.hazelcast.client.impl.protocol.ClientMessageType;
+import com.hazelcast.client.impl.protocol.parameters.MapPutParameters;
+import com.hazelcast.client.impl.protocol.util.BitUtil;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.nio.serialization.DefaultSerializationServiceBuilder;
 import com.hazelcast.nio.serialization.SerializationService;
@@ -27,57 +28,42 @@ public class MapMessageEncodeDecodeTest {
     private static final long THE_LONG = 0xFFFFl;
 
     private static final boolean THE_BOOLEAN = true;
-    private ParameterFlyweight flyweight = new ParameterFlyweight();
 
     private ByteBuffer byteBuffer;
 
     @Before
     public void setUp() {
-        byteBuffer = ByteBuffer.allocate(1024);
-        flyweight.wrap(byteBuffer);
+        byteBuffer = ByteBuffer.allocate(20);
     }
 
     @Test
-    public void shouldEncodeCorrectly_PUT() {
-        MapPutParameters.encode(flyweight, NAME, BYTES_DATA, BYTES_DATA, THE_LONG, THE_LONG, THE_BOOLEAN);
+    public void shouldEncodeDecodeCorrectly_PUT() {
+        final int calculatedSize =
+                (BitUtil.SIZE_OF_INT + NAME.length()) + (BitUtil.SIZE_OF_INT + BYTES_DATA.length) * 2 + 8 * 2 + 1
+                        + ClientMessage.HEADER_SIZE;
+        ClientMessage cmEncode = MapPutParameters.encode(NAME, BYTES_DATA, BYTES_DATA, THE_LONG, THE_LONG, THE_BOOLEAN);
+        cmEncode.setVersion((short) 3).setFlags(ClientMessage.BEGIN_AND_END_FLAGS).setCorrelationId(66).setPartitionId(77);
 
-        flyweight.index(0);
-        final MapPutParameters putParameters = MapPutParameters.decode(flyweight);
+        byteBuffer = cmEncode.buffer().byteBuffer();
 
-        assertEquals(NAME, putParameters.name);
-        assertArrayEquals(BYTES_DATA, putParameters.key);
-        assertArrayEquals(BYTES_DATA, putParameters.value);
-        assertEquals(THE_LONG, putParameters.threadId);
-        assertEquals(THE_LONG, putParameters.ttl);
-        assertEquals(THE_BOOLEAN, putParameters.async);
+        ClientMessage cmDecode = ClientMessage.createForDecode(this.byteBuffer, 0);
+
+        final MapPutParameters decodeParams = MapPutParameters.decode(cmDecode);
+
+        assertEquals(calculatedSize, cmEncode.getFrameLength());
+
+        assertEquals(ClientMessageType.MAP_PUT_REQUEST.id(), cmDecode.getMessageType());
+        assertEquals(3, cmDecode.getVersion());
+        assertEquals(ClientMessage.BEGIN_AND_END_FLAGS, cmDecode.getFlags());
+        assertEquals(66, cmDecode.getCorrelationId());
+        assertEquals(77, cmDecode.getPartitionId());
+
+        assertEquals(NAME, decodeParams.name);
+        assertArrayEquals(BYTES_DATA, decodeParams.key);
+        assertArrayEquals(BYTES_DATA, decodeParams.value);
+        assertEquals(THE_LONG, decodeParams.threadId);
+        assertEquals(THE_LONG, decodeParams.ttl);
+        assertEquals(THE_BOOLEAN, decodeParams.async);
     }
 
-    @Test
-    public void shouldEncodeDecodeWithHeaderCorrectly_PUT() {
-        byteBuffer = ByteBuffer
-                .allocate(MapPutParameters.encodeSizeCost(NAME, BYTES_DATA, BYTES_DATA));
-        ClientMessage cmEncode = new ClientMessage();
-        cmEncode.wrapForEncode(byteBuffer, 0);
-
-        MapPutParameters.encode(cmEncode, NAME, BYTES_DATA, BYTES_DATA, THE_LONG, THE_LONG, THE_BOOLEAN);
-        cmEncode.headerType(7).version((short) 3).flags(ClientMessage.BEGIN_AND_END_FLAGS).correlationId(66).partitionId(77);
-
-        ClientMessage cmDecode = new ClientMessage();
-        cmDecode.wrapForDecode(byteBuffer, 0);
-
-        final MapPutParameters putParameters = MapPutParameters.decode(cmDecode);
-
-        assertEquals(7, cmDecode.headerType());
-        assertEquals(3, cmDecode.version());
-        assertEquals(ClientMessage.BEGIN_AND_END_FLAGS, cmDecode.flags());
-        assertEquals(66, cmDecode.correlationId());
-        assertEquals(77, cmDecode.partitionId());
-
-        assertEquals(NAME, putParameters.name);
-        assertArrayEquals(BYTES_DATA, putParameters.key);
-        assertArrayEquals(BYTES_DATA, putParameters.value);
-        assertEquals(THE_LONG, putParameters.threadId);
-        assertEquals(THE_LONG, putParameters.ttl);
-        assertEquals(THE_BOOLEAN, putParameters.async);
-    }
 }

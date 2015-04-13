@@ -26,6 +26,7 @@
             <xs:choice minOccurs="1" maxOccurs="unbounded">
                 <xs:element ref="import" minOccurs="0" maxOccurs="unbounded"/>
                 <xs:element name="group" type="cluster-group" minOccurs="0" maxOccurs="1"/>
+                <xs:element name="license-key" type="xs:string" minOccurs="0" maxOccurs="1"/>
                 <xs:element name="properties" type="properties" minOccurs="0" maxOccurs="1"/>
                 <xs:element name="network" type="network" minOccurs="0" maxOccurs="1"/>
                 <xs:element name="executor-pool-size" type="executor-pool-size" minOccurs="0" maxOccurs="1"
@@ -143,7 +144,7 @@
     <xs:element name="connection-attempt-limit" default="2">
         <xs:simpleType>
             <xs:restriction base="xs:int">
-                <xs:minInclusive value="1"/>
+                <xs:minInclusive value="0"/>
             </xs:restriction>
         </xs:simpleType>
     </xs:element>

@@ -31,16 +31,16 @@ import static com.hazelcast.util.StringUtil.bytesToString;
 /**
  * The reading side of the {@link com.hazelcast.nio.Connection}.
  */
-final class ReadHandler
-        extends AbstractSelectionHandler {
+public final class ReadHandler extends AbstractSelectionHandler {
 
     private final ByteBuffer inputBuffer;
-
-    private final IOSelector ioSelector;
 
     private SocketReader socketReader;
 
     private volatile long lastHandle;
+
+    //This field will be incremented by a single thread. It can be read by multiple threads.
+    private volatile long eventCount;
 
     public ReadHandler(TcpIpConnection connection, IOSelector ioSelector) {
         super(connection, ioSelector, SelectionKey.OP_READ);
@@ -61,7 +61,15 @@ final class ReadHandler
     }
 
     @Override
+    public long getEventCount() {
+        return eventCount;
+    }
+
+    @Override
+    @edu.umd.cs.findbugs.annotations.SuppressWarnings(value = "VO_VOLATILE_INCREMENT",
+            justification = "eventCount is accessed by a single thread only.")
     public void handle() {
+        eventCount++;
         lastHandle = Clock.currentTimeMillis();
         if (!connection.isAlive()) {
             String message = "We are being asked to read, but connection is not live so we won't";
@@ -140,15 +148,15 @@ final class ReadHandler
     private void setupClient(WriteHandler writeHandler)
             throws IOException {
         final ByteBuffer clientTypeBuffer = ByteBuffer.allocate(3);
-        int size;
+        int size = 0;
         do {
-            size = socketChannel.read(clientTypeBuffer);
+            size += socketChannel.read(clientTypeBuffer);
         } while (size < 3);
         clientTypeBuffer.flip();
         SocketClientDataReaderNew reader = new SocketClientDataReaderNew(connection);
         if (reader.setConnectionType(clientTypeBuffer)) {
             socketReader = reader;
-            writeHandler.setProtocol(Protocols.CLIENT_BINARY);
+            writeHandler.setProtocol(Protocols.CLIENT_BINARY_NEW);
         }
     }
 

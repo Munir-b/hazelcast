@@ -25,6 +25,7 @@ import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.PortableReader;
 import com.hazelcast.nio.serialization.PortableWriter;
+import com.hazelcast.spi.InvocationBuilder;
 import com.hazelcast.spi.Operation;
 
 import java.io.IOException;
@@ -69,8 +70,8 @@ public class CacheManagementConfigRequest
     }
 
     @Override
-    public Address getTarget() {
-        return target;
+    protected InvocationBuilder getInvocationBuilder(Operation op) {
+        return operationService.createInvocationBuilder(getServiceName(), op, target);
     }
 
     @Override
@@ -78,6 +79,7 @@ public class CacheManagementConfigRequest
         return CacheService.SERVICE_NAME;
     }
 
+    @Override
     public void write(PortableWriter writer)
             throws IOException {
         writer.writeUTF("n", name);
@@ -87,6 +89,7 @@ public class CacheManagementConfigRequest
         target.writeData(rawDataOutput);
     }
 
+    @Override
     public void read(PortableReader reader)
             throws IOException {
         name = reader.readUTF("n");
@@ -101,4 +104,5 @@ public class CacheManagementConfigRequest
     public Permission getRequiredPermission() {
         return null;
     }
+
 }

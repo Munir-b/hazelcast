@@ -18,6 +18,8 @@ package com.hazelcast.client.impl.protocol;
 
 import com.hazelcast.client.impl.protocol.util.BitUtil;
 import com.hazelcast.client.impl.protocol.util.ParameterFlyweight;
+import com.hazelcast.nio.SocketReadable;
+import com.hazelcast.nio.SocketWritable;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -54,14 +56,31 @@ import static java.nio.ByteOrder.LITTLE_ENDIAN;
  * </pre>
  */
 public class ClientMessage
-        extends ParameterFlyweight {
+        extends ParameterFlyweight
+        implements SocketWritable, SocketReadable {
 
-    /** Begin Flag */
+    /**
+     * Current protocol version
+     */
+    public static final short VERSION = 0;
+
+    /**
+     * Begin Flag
+     */
     public static final short BEGIN_FLAG = 0x80;
-    /** End Flag */
+    /**
+     * End Flag
+     */
     public static final short END_FLAG = 0x40;
-    /** Begin and End Flags */
+    /**
+     * Begin and End Flags
+     */
     public static final short BEGIN_AND_END_FLAGS = (short) (BEGIN_FLAG | END_FLAG);
+
+    /**
+     * Listener Event Flag
+     */
+    public static final short LISTENER_EVENT_FLAG = 0x01;
 
     /**
      * ClientMessage Fixed Header size in bytes
@@ -81,180 +100,309 @@ public class ClientMessage
         HEADER_SIZE = DATA_OFFSET_FIELD_OFFSET + BitUtil.SIZE_OF_SHORT;
     }
 
+    private transient int valueOffset;
+
+    protected ClientMessage() {
+        super();
+    }
+
+    protected ClientMessage(boolean encode, final ByteBuffer buffer, final int offset) {
+        super(buffer, offset);
+        if (encode) {
+            wrapForEncode(buffer, offset);
+        } else {
+            wrapForDecode(buffer, offset);
+        }
+    }
+
+    public static ClientMessage create() {
+        final ClientMessage clientMessage = new ClientMessage();
+        clientMessage.wrap(ByteBuffer.allocate(INITIAL_BUFFER_CAPACITY), 0);
+        return clientMessage;
+    }
+
+    public static ClientMessage createForEncode(int initialCapacity) {
+        return new ClientMessage(true, ByteBuffer.allocate(initialCapacity), 0);
+    }
+
+    public static ClientMessage createForDecode(int initialCapacity) {
+        return new ClientMessage(false, ByteBuffer.allocate(initialCapacity), 0);
+    }
+
+    public static ClientMessage createForEncode(final ByteBuffer buffer, final int offset) {
+        return new ClientMessage(true, buffer, offset);
+    }
+
+    public static ClientMessage createForDecode(final ByteBuffer buffer, final int offset) {
+        return new ClientMessage(false, buffer, offset);
+    }
+
     public void wrapForEncode(final ByteBuffer buffer, final int offset) {
         super.wrap(buffer, offset);
-        dataOffset(HEADER_SIZE);
-        frameLength(HEADER_SIZE);
-        index(dataOffset());
+        setDataOffset(HEADER_SIZE);
+        setFrameLength(HEADER_SIZE);
+        index(getDataOffset() + offset);
+        setPartitionId(-1);
     }
 
     public void wrapForDecode(final ByteBuffer buffer, final int offset) {
         super.wrap(buffer, offset);
-        index(dataOffset());
+        index(getDataOffset() + offset);
     }
 
     /**
-     * return version field value
+     * Returns the version field value.
      *
-     * @return ver field value
+     * @return The version field value.
      */
-    public short version() {
+    public short getVersion() {
         return uint8Get(offset() + VERSION_FIELD_OFFSET);
     }
 
     /**
-     * set version field value
+     * Sets the version field value.
      *
-     * @param ver field value
+     * @param version The field value to set.
      * @return ClientMessage
      */
-    public ClientMessage version(final short ver) {
+    public ClientMessage setVersion(final short ver) {
         uint8Put(offset() + VERSION_FIELD_OFFSET, ver);
         return this;
     }
 
+
     /**
-     * return flags field value
-     *
-     * @return flags field value
+     * @return true if given flag is set, false otherwise
      */
-    public short flags() {
+    public boolean isFlagSet(short flag) {
+        int i = getFlags() & flag;
+        return i == flag;
+    }
+
+    /**
+     * Returns the flags field value.
+     *
+     * @return The flags field value.
+     */
+    public short getFlags() {
         return uint8Get(offset() + FLAGS_FIELD_OFFSET);
     }
 
     /**
-     * set the flags field value
+     * Sets the flags field value.
      *
-     * @param flags field value
+     * @param flags The field value to set.
      * @return ClientMessage
      */
-    public ClientMessage flags(final short flags) {
-        uint8Put(offset() + FLAGS_FIELD_OFFSET, flags);
+    public ClientMessage setFlags(final short flags) {
+        uint8Put(offset() + FLAGS_FIELD_OFFSET, (short) (getFlags() | flags));
         return this;
     }
 
     /**
-     * return header type field
+     * Returns the message type field.
      *
-     * @return type field value
+     * @return The message type field value.
      */
-    public int headerType() {
+    public int getMessageType() {
         return uint16Get(offset() + TYPE_FIELD_OFFSET, LITTLE_ENDIAN);
     }
 
     /**
-     * set header type field
+     * Sets the message type field.
      *
-     * @param type field value
+     * @param message The message type field value to set.
      * @return ClientMessage
      */
-    public ClientMessage headerType(final int type) {
+    public ClientMessage setMessageType(final int type) {
         uint16Put(offset() + TYPE_FIELD_OFFSET, (short) type, LITTLE_ENDIAN);
         return this;
     }
 
     /**
-     * return frame length field
+     * Returns the frame length field.
      *
-     * @return frame length field
+     * @return The frame length field.
      */
-    public int frameLength() {
+    public int getFrameLength() {
         return (int) uint32Get(offset() + FRAME_LENGTH_FIELD_OFFSET, LITTLE_ENDIAN);
     }
 
     /**
-     * set frame length field
+     * Sets the frame length field.
      *
-     * @param length field value
+     * @param frame The frame length field value to set.
      * @return ClientMessage
      */
-    public ClientMessage frameLength(final int length) {
+    public ClientMessage setFrameLength(final int length) {
         uint32Put(offset() + FRAME_LENGTH_FIELD_OFFSET, length, LITTLE_ENDIAN);
         return this;
     }
 
     /**
-     * return correlation id field
+     * Returns the correlation id field.
      *
-     * @return correlation id field
+     * @return The correlation id field.
      */
-    public int correlationId() {
+    public int getCorrelationId() {
         return (int) uint32Get(offset() + CORRELATION_ID_FIELD_OFFSET, LITTLE_ENDIAN);
     }
 
     /**
-     * set correlation id field
+     * Sets the correlation id field.
      *
-     * @param correlationId field value
+     * @param correlationId The correlation id field value to set.
      * @return ClientMessage
      */
-    public ClientMessage correlationId(final int correlationId) {
+    public ClientMessage setCorrelationId(final int correlationId) {
         uint32Put(offset() + CORRELATION_ID_FIELD_OFFSET, correlationId, ByteOrder.LITTLE_ENDIAN);
         return this;
     }
 
     /**
-     * return partition id field
+     * Returns the partition id field.
      *
-     * @return partition id field
+     * @return The partition id field.
      */
-    public int partitionId() {
+    public int getPartitionId() {
         return (int) uint32Get(offset() + PARTITION_ID_FIELD_OFFSET, LITTLE_ENDIAN);
     }
 
     /**
-     * set partition id field
+     * Sets the partition id field.
      *
-     * @param partitionId field value
+     * @param partitionId The partitions id field value to set.
      * @return ClientMessage
      */
-    public ClientMessage partitionId(final int partitionId) {
+    public ClientMessage setPartitionId(final int partitionId) {
         uint32Put(offset() + PARTITION_ID_FIELD_OFFSET, partitionId, ByteOrder.LITTLE_ENDIAN);
         return this;
     }
 
     /**
-     * return dataOffset field
+     * Returns the setDataOffset field.
      *
-     * @return type field value
+     * @return The setDataOffset type field value.
      */
-    public int dataOffset() {
+    public int getDataOffset() {
         return uint16Get(offset() + DATA_OFFSET_FIELD_OFFSET, LITTLE_ENDIAN);
     }
 
     /**
-     * set dataOffset field
+     * Sets the dataOffset field.
      *
-     * @param dataOffset field value
+     * @param dataOffset The dataOffset field value to set.
      * @return ClientMessage
      */
-    public ClientMessage dataOffset(final int dataOffset) {
+    public ClientMessage setDataOffset(final int dataOffset) {
         uint16Put(offset() + DATA_OFFSET_FIELD_OFFSET, (short) dataOffset, LITTLE_ENDIAN);
         return this;
     }
 
     /**
-     * copy into payload data region located at data Offset
-     * @param payload the payload data
+     * Copy into the payload data region located at data Offset.
+     *
+     * @param payload The data being copied into the payload data region.
      * @return ClientMessage
      */
     public ClientMessage putPayloadData(byte[] payload) {
-        final int index = offset() + dataOffset();
+        final int index = offset() + getDataOffset();
         buffer.putBytes(index, payload);
-        frameLength(frameLength() + payload.length);
+        setFrameLength(getFrameLength() + payload.length);
         return this;
     }
 
     /**
-     * reads from payload data region into the provided array
-     * @param payload destination array that payload will be copied into
+     * Reads from the payload data region into the provided array.
+     *
+     * @param The payload destination array that the payload will be copied into.
      * @return ClientMessage
      */
     public ClientMessage getPayloadData(byte[] payload) {
-        final int index = offset() + dataOffset();
-        final int length = frameLength() - index;
+        final int index = offset() + getDataOffset();
+        if (index >= (offset() + getFrameLength())) {
+            throw new IndexOutOfBoundsException("index cannot exceed frame length");
+        }
+        final int length = (offset() + getFrameLength()) - index;
         buffer.getBytes(index, payload, 0, length);
         return this;
     }
 
+    public ClientMessage updateFrameLength() {
+        setFrameLength(index());
+        return this;
+    }
+
+    @Override
+    public boolean writeTo(ByteBuffer destination) {
+        byte[] byteArray = buffer().byteArray();
+        int size = getFrameLength();
+
+        // the number of bytes that can be written to the bb.
+        int bytesWritable = destination.remaining();
+
+        // the number of bytes that need to be written.
+        int bytesNeeded = size - valueOffset;
+
+        int bytesWrite;
+        boolean done;
+        if (bytesWritable >= bytesNeeded) {
+            // All bytes for the value are available.
+            bytesWrite = bytesNeeded;
+            done = true;
+        } else {
+            // Not all bytes for the value are available. So lets write as much as is available.
+            bytesWrite = bytesWritable;
+            done = false;
+        }
+
+        destination.put(byteArray, valueOffset, bytesWrite);
+        valueOffset += bytesWrite;
+
+        return done;
+    }
+
+    public boolean readFrom(ByteBuffer source) {
+        if (index() == 0) {
+            initFrameSize(source);
+        }
+        while (index() >= BitUtil.SIZE_OF_INT && source.hasRemaining() && !isComplete()) {
+            accumulate(source, getFrameLength() - index());
+        }
+        return isComplete();
+    }
+
+    private int initFrameSize(ByteBuffer byteBuffer) {
+        if (byteBuffer.remaining() < BitUtil.SIZE_OF_INT) {
+            return 0;
+        }
+        final int accumulatedBytesSize = accumulate(byteBuffer, BitUtil.SIZE_OF_INT);
+        return accumulatedBytesSize;
+    }
+
+    private int accumulate(ByteBuffer byteBuffer, int length) {
+        final int remaining = byteBuffer.remaining();
+        final int readLength = remaining < length ? remaining : length;
+        if (readLength > 0) {
+            final int requiredCapacity = index() + readLength;
+            ensureCapacity(requiredCapacity);
+            buffer.putBytes(index(), byteBuffer, readLength);
+            index(index() + readLength);
+            return readLength;
+        }
+        return 0;
+    }
+
+    /**
+     * Checks the frame size and total data size to validate the message size.
+     * @return true if the message is constructed.
+     */
+    public boolean isComplete() {
+        return (index() >= HEADER_SIZE) && (index() == getFrameLength());
+    }
+
+    @Override
+    public boolean isUrgent() {
+        return false;
+    }
 }

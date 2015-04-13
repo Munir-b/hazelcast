@@ -5,10 +5,22 @@
 ## Release Notes
 
 ### New Features
+
 This section provides the new features introduced with Hazelcast 3.5 release. 
 
-- **???**: ???. For more information, please see [???](#???).
-
+- **Async Back Pressure**: The Back Pressure introduced with Hazelcast 3.4 now supports async operations. For more information, please see [???](#???).
+- **Cluster Quorum**: This feature enables you to define the minimum number of machines required in a cluster for the cluster to remain in an operational state. For more information, please see  the [Cluster Quorum section](#cluster-quorum).
+- **Continuous Query Caching**: ???. For more information, please see [???](#???).
+- **Enterprise WAN Replication**: ???. For more information, please see [???](#???).
+- **Client Configuration Import**: ???. For more information, please see [???](#???).
+- **Hazelcast Client Protocol**: ???. For more information, please see [???](#???).
+- **Increased Visibility of Slow Operations**: ???. For more information, please see [???](#???).
+- **Client Statistics on Management Center**: ???. For more information, please see [???](#???).
+- **Near Cache for JCache**: ???. For more information, please see [???](#???).
+- **Listener for Lost Partitions**: ???. For more information, please see [???](#???).
+- **Scalable Map Loader**: ???. For more information, please see [???](#???).
+- **Complete Implementation of XA Transactions**: ???. For more information, please see [???](#???).
+- 
 
 
 

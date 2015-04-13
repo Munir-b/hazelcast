@@ -11,10 +11,23 @@ import java.io.PrintWriter;
 /**
  * Contains some debugging functionality; useful if you are running large testsuites and can't rely on a debugger.
  */
-@edu.umd.cs.findbugs.annotations.SuppressWarnings({ "DM_DEFAULT_ENCODING" })
+@edu.umd.cs.findbugs.annotations.SuppressWarnings({"DM_DEFAULT_ENCODING"})
 public final class DebugUtil {
 
     private DebugUtil() {
+    }
+
+    /**
+     * Prints the stacktrace of the calling thread to System.out.
+     *
+     * @param msg debug message
+     */
+    public static void printStackTrace(String msg) {
+        try {
+            throw new Exception(msg);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     /**
@@ -22,7 +35,7 @@ public final class DebugUtil {
      * <p/>
      * If something fails while writing to the file, the exception is printed and then ignored.
      *
-     * @param file
+     * @param file the file to which the stacktrace of the current thread is appended.
      * @throws java.lang.NullPointerException if file is null.
      */
     public static void appendStackTrace(File file) {
@@ -59,8 +72,8 @@ public final class DebugUtil {
      * <p/>
      * If something fails while writing to the file, the exception is printed and then ignored.
      *
-     * @param file
-     * @param s
+     * @param file the file to which text is appended.
+     * @param s the text to append to the file.
      * @throws java.lang.NullPointerException if file is null
      */
     public static void appendWithNewLine(File file, String s) {

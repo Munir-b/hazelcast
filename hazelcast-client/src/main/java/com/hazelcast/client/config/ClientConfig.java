@@ -96,6 +96,8 @@ public class ClientConfig {
 
     private ClassLoader classLoader;
 
+    private String licenseKey;
+
     public void setConfigPatternMatcher(ConfigPatternMatcher configPatternMatcher) {
         if (configPatternMatcher == null) {
             throw new IllegalArgumentException("ConfigPatternMatcher is not allowed to be null!");
@@ -621,6 +623,15 @@ public class ClientConfig {
         return this;
     }
 
+    public String getLicenseKey() {
+        return licenseKey;
+    }
+
+    public ClientConfig setLicenseKey(final String licenseKey) {
+        this.licenseKey = licenseKey;
+        return this;
+    }
+
     private <T> T lookupByPattern(Map<String, T> configPatterns, String itemName) {
         T candidate = configPatterns.get(itemName);
         if (candidate != null) {
@@ -631,7 +642,7 @@ public class ClientConfig {
             return configPatterns.get(configPatternKey);
         }
         if (!"default".equals(itemName) && !itemName.startsWith("hz:")) {
-            LOGGER.warning("No configuration found for " + itemName + ", using default config!");
+            LOGGER.finest("No configuration found for " + itemName + ", using default config!");
         }
         return null;
     }

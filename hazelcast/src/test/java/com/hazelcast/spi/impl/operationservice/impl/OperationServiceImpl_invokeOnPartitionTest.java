@@ -17,86 +17,69 @@
 package com.hazelcast.spi.impl.operationservice.impl;
 
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.nio.ObjectDataInput;
-import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.spi.AbstractOperation;
 import com.hazelcast.spi.InternalCompletableFuture;
-import com.hazelcast.spi.OperationService;
+import com.hazelcast.spi.impl.operationservice.InternalOperationService;
+import com.hazelcast.test.ExceptionThrowingCallable;
+import com.hazelcast.test.ExpectedRuntimeException;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.QuickTest;
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import java.io.IOException;
-
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category(QuickTest.class)
 public class OperationServiceImpl_invokeOnPartitionTest extends HazelcastTestSupport {
 
-    @Test
-    public void test_whenLocalPartition(){
+    private HazelcastInstance local;
+    private InternalOperationService operationService;
+    private HazelcastInstance remote;
+
+    @Before
+    public void setup(){
         HazelcastInstance[] nodes = createHazelcastInstanceFactory(2).newInstances();
         warmUpPartitions(nodes);
 
-        HazelcastInstance localNode = nodes[0];
-        OperationService operationService = getOperationService(localNode);
+        local = nodes[0];
+        remote = nodes[1];
+        operationService = getOperationService(local);
+    }
+
+    @Test
+    public void whenLocalPartition(){
         String expected = "foobar";
         DummyOperation operation = new DummyOperation(expected);
 
         InternalCompletableFuture<String> invocation = operationService.invokeOnPartition(
-                null, operation, getPartitionId(localNode));
+                null, operation, getPartitionId(local));
         assertEquals(expected, invocation.getSafely());
     }
 
     @Test
-    public void test_whenRemotePartition(){
-        HazelcastInstance[] nodes = createHazelcastInstanceFactory(2).newInstances();
-        warmUpPartitions(nodes);
-
-        HazelcastInstance localNode = nodes[0];
-        HazelcastInstance remoteNode = nodes[1];
-        OperationService operationService = getOperationService(localNode);
+    public void whenRemotePartition(){
         String expected = "foobar";
         DummyOperation operation = new DummyOperation(expected);
 
         InternalCompletableFuture<String> invocation = operationService.invokeOnPartition(
-                null, operation, getPartitionId(remoteNode));
+                null, operation, getPartitionId(remote));
         assertEquals(expected, invocation.getSafely());
     }
 
-    public static class DummyOperation extends AbstractOperation {
-        private Object value;
+    @Test
+    public void whenExceptionThrownInOperationRun() {
+        DummyOperation operation = new DummyOperation(new ExceptionThrowingCallable());
+        InternalCompletableFuture<String> invocation = operationService.invokeOnPartition(
+                null, operation, getPartitionId(remote));
 
-        public DummyOperation() {
-        }
-
-        public DummyOperation(Object value) {
-            this.value = value;
-        }
-
-        @Override
-        public void run() throws Exception {
-        }
-
-        @Override
-        public Object getResponse() {
-            return value;
-        }
-
-        @Override
-        protected void writeInternal(ObjectDataOutput out) throws IOException {
-            super.writeInternal(out);
-            out.writeObject(value);
-        }
-
-        @Override
-        protected void readInternal(ObjectDataInput in) throws IOException {
-            super.readInternal(in);
-            value = in.readObject();
+        try {
+            invocation.getSafely();
+            fail();
+        } catch (ExpectedRuntimeException expected) {
         }
     }
 }

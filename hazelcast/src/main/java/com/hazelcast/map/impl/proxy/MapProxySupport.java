@@ -18,8 +18,10 @@ package com.hazelcast.map.impl.proxy;
 
 import com.hazelcast.concurrent.lock.LockProxySupport;
 import com.hazelcast.config.EntryListenerConfig;
+import com.hazelcast.config.ListenerConfig;
 import com.hazelcast.config.MapConfig;
 import com.hazelcast.config.MapIndexConfig;
+import com.hazelcast.config.MapPartitionLostListenerConfig;
 import com.hazelcast.config.MapStoreConfig;
 import com.hazelcast.core.EntryEventType;
 import com.hazelcast.core.EntryView;
@@ -82,6 +84,7 @@ import com.hazelcast.map.impl.operation.SizeOperationFactory;
 import com.hazelcast.map.impl.operation.TryPutOperation;
 import com.hazelcast.map.impl.operation.TryRemoveOperation;
 import com.hazelcast.map.listener.MapListener;
+import com.hazelcast.map.listener.MapPartitionLostListener;
 import com.hazelcast.monitor.LocalMapStats;
 import com.hazelcast.monitor.impl.LocalMapStatsImpl;
 import com.hazelcast.nio.Address;
@@ -114,6 +117,7 @@ import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.EventListener;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -172,31 +176,45 @@ abstract class MapProxySupport extends AbstractDistributedObject<MapService> imp
     }
 
     private void initializeListeners() {
-        final NodeEngine nodeEngine = getNodeEngine();
-        List<EntryListenerConfig> listenerConfigs = getMapConfig().getEntryListenerConfigs();
-        for (EntryListenerConfig listenerConfig : listenerConfigs) {
-            MapListener listener = null;
-            if (listenerConfig.getImplementation() != null) {
-                listener = listenerConfig.getImplementation();
-            } else if (listenerConfig.getClassName() != null) {
-                try {
-                    listener = ClassLoaderUtil
-                            .newInstance(nodeEngine.getConfigClassLoader(), listenerConfig.getClassName());
-                } catch (Exception e) {
-                    throw ExceptionUtil.rethrow(e);
-                }
-            }
+        final MapConfig mapConfig = getMapConfig();
+
+        for (EntryListenerConfig listenerConfig : mapConfig.getEntryListenerConfigs()) {
+            final MapListener listener = initializeListener(listenerConfig);
             if (listener != null) {
-                if (listener instanceof HazelcastInstanceAware) {
-                    ((HazelcastInstanceAware) listener).setHazelcastInstance(nodeEngine.getHazelcastInstance());
-                }
                 if (listenerConfig.isLocal()) {
-                    addLocalEntryListener(listener);
+                    addLocalEntryListenerInternal(listener);
                 } else {
                     addEntryListenerInternal(listener, null, listenerConfig.isIncludeValue());
                 }
             }
         }
+
+        for (MapPartitionLostListenerConfig listenerConfig : mapConfig.getPartitionLostListenerConfigs()) {
+            final MapPartitionLostListener listener = initializeListener(listenerConfig);
+            if (listener != null) {
+                addPartitionLostListenerInternal(listener);
+            }
+        }
+    }
+
+    private <T extends EventListener> T initializeListener(ListenerConfig listenerConfig) {
+        T listener = null;
+        if (listenerConfig.getImplementation() != null) {
+            listener = (T) listenerConfig.getImplementation();
+        } else if (listenerConfig.getClassName() != null) {
+            try {
+                return ClassLoaderUtil
+                        .newInstance(getNodeEngine().getConfigClassLoader(), listenerConfig.getClassName());
+            } catch (Exception e) {
+                throw ExceptionUtil.rethrow(e);
+            }
+        }
+
+        if (listener instanceof HazelcastInstanceAware) {
+            ((HazelcastInstanceAware) listener).setHazelcastInstance(getNodeEngine().getHazelcastInstance());
+        }
+
+        return listener;
     }
 
     // this operation returns the object in data format except
@@ -906,12 +924,12 @@ abstract class MapProxySupport extends AbstractDistributedObject<MapService> imp
         }
     }
 
-    public String addLocalEntryListener(final MapListener listener) {
+    public String addLocalEntryListenerInternal(final Object listener) {
         final MapService mapService = getService();
         return mapService.getMapServiceContext().addLocalEventListener(listener, name);
     }
 
-    public String addLocalEntryListenerInternal(MapListener listener, Predicate predicate,
+    public String addLocalEntryListenerInternal(Object listener, Predicate predicate,
                                                 final Data key, boolean includeValue) {
 
         final MapService mapService = getService();
@@ -920,14 +938,14 @@ abstract class MapProxySupport extends AbstractDistributedObject<MapService> imp
     }
 
     protected String addEntryListenerInternal(
-            final MapListener listener, final Data key, final boolean includeValue) {
+            final Object listener, final Data key, final boolean includeValue) {
         EventFilter eventFilter = new EntryEventFilter(includeValue, key);
         final MapService mapService = getService();
         return mapService.getMapServiceContext().addEventListener(listener, eventFilter, name);
     }
 
     protected String addEntryListenerInternal(
-            MapListener listener, Predicate predicate, final Data key, final boolean includeValue) {
+            Object listener, Predicate predicate, final Data key, final boolean includeValue) {
         EventFilter eventFilter = new QueryEventFilter(includeValue, key, predicate);
         final MapService mapService = getService();
         return mapService.getMapServiceContext().addEventListener(listener, eventFilter, name);
@@ -936,6 +954,16 @@ abstract class MapProxySupport extends AbstractDistributedObject<MapService> imp
     protected boolean removeEntryListenerInternal(String id) {
         final MapService mapService = getService();
         return mapService.getMapServiceContext().removeEventListener(name, id);
+    }
+
+    protected String addPartitionLostListenerInternal(MapPartitionLostListener listener) {
+        final MapService mapService = getService();
+        return mapService.getMapServiceContext().addPartitionLostListener(listener, name);
+    }
+
+    protected boolean removePartitionLostListenerInternal(String id) {
+        final MapService mapService = getService();
+        return mapService.getMapServiceContext().removePartitionLostListener(name, id);
     }
 
     protected EntryView getEntryViewInternal(final Data key) {
@@ -1137,8 +1165,7 @@ abstract class MapProxySupport extends AbstractDistributedObject<MapService> imp
         final MapService mapService = getService();
         final MapServiceContext mapServiceContext = mapService.getMapServiceContext();
         final MapEventPublisher mapEventPublisher = mapServiceContext.getMapEventPublisher();
-        mapEventPublisher.publishMapEvent(getNodeEngine().getThisAddress(),
-                name, eventType, numberOfAffectedEntries);
+        mapEventPublisher.publishMapEvent(getNodeEngine().getThisAddress(), name, eventType, numberOfAffectedEntries);
     }
 
     protected long getTimeInMillis(final long time, final TimeUnit timeunit) {

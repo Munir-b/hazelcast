@@ -17,7 +17,7 @@
 package com.hazelcast.instance;
 
 import com.hazelcast.config.Config;
-import com.hazelcast.util.HealthMonitorLevel;
+import com.hazelcast.internal.monitors.HealthMonitorLevel;
 
 /**
  * The GroupProperties contain the Hazelcast properties. They can be set as an environmental variable, or
@@ -62,6 +62,18 @@ public class GroupProperties {
     public static final String PROP_VERSION_CHECK_ENABLED = "hazelcast.version.check.enabled";
     public static final String PROP_PREFER_IPv4_STACK = "hazelcast.prefer.ipv4.stack";
     public static final String PROP_IO_THREAD_COUNT = "hazelcast.io.thread.count";
+
+    /**
+     * The interval in seconds between {@link com.hazelcast.nio.tcp.handlermigration.IOBalancer IOBalancer}
+     * executions. The shorter intervals will catch I/O Imbalance faster, but they will cause higher overhead.
+     *
+     * Please see documentation of {@link com.hazelcast.nio.tcp.handlermigration.IOBalancer IOBalancer} for
+     * detailed explanation of the problem.
+     *
+     * Default value is 20 seconds. A negative value disables the balancer.
+     *
+     */
+    public static final String PROP_IO_BALANCER_INTERVAL_SECONDS = "hazelcast.io.balancer.interval.seconds";
     /**
      * The number of partition threads per Member. If this is less than the number of partitions on a Member, then
      * partition operations will queue behind other operations of different partitions. The default is 4.
@@ -121,6 +133,13 @@ public class GroupProperties {
     public static final String PROP_INITIAL_WAIT_SECONDS = "hazelcast.initial.wait.seconds";
     public static final String PROP_MAP_REPLICA_SCHEDULED_TASK_DELAY_SECONDS
             = "hazelcast.map.replica.scheduled.task.delay.seconds";
+    /**
+     * PROP_MAP_EXPIRY_DELAY_SECONDS is useful to deal with some possible edge cases e.g. when using EntryProcessor,
+     * without this delay, you may see an EntryProcessor running on owner partition found a key but
+     * EntryBackupProcessor did not find it on backup, as a result of this when backup promotes to owner
+     * you will end up an unprocessed key.
+     */
+    public static final String PROP_MAP_EXPIRY_DELAY_SECONDS = "hazelcast.map.expiry.delay.seconds";
     public static final String PROP_PARTITION_COUNT = "hazelcast.partition.count";
     public static final String PROP_LOGGING_TYPE = "hazelcast.logging.type";
     public static final String PROP_ENABLE_JMX = "hazelcast.jmx";
@@ -142,7 +161,7 @@ public class GroupProperties {
     public static final String PROP_SYSTEM_LOG_ENABLED = "hazelcast.system.log.enabled";
 
     /**
-     * Enables or disables the {@link com.hazelcast.spi.impl.SlowOperationDetector}.
+     * Enables or disables the {@link com.hazelcast.spi.impl.operationexecutor.slowoperationdetector.SlowOperationDetector}.
      */
     public static final String PROP_SLOW_OPERATION_DETECTOR_ENABLED = "hazelcast.slow.operation.detector.enabled";
 
@@ -193,20 +212,56 @@ public class GroupProperties {
      * because the invoker will wait for the primary and the backups to complete. The frequency of this is determined by the
      * sync-window.
      * <p/>
-     * In Hazelcast 3.4.1 we'll provide back pressure for any async operation; not only for sync operations with async backups.
-     * <p/>
-     * In the future we'll replace this approach by relying on TCP/IP congestion control; but for this to work we need to
-     * create multiple connections between members because currently a member can't stop consuming from a connection
-     * when that member is overloaded because it could also stop to read important packets like heartbeats and other system
-     * operations.
      */
     public static final String PROP_BACKPRESSURE_ENABLED = "hazelcast.backpressure.enabled";
 
     /**
-     * This property only has meaning when back-pressure is enabled. The larger the sync-window the less frequent a
-     * asynchronous backup is converted to a sync backup.
+     * Control the frequency of a BackupAwareOperation getting its async backups converted to a sync backups. This is needed
+     * to prevent an accumulation of asynchronous backups and eventually running into stability issues.
+     *
+     * A sync window of 10 means that 1 in 10 BackupAwareOperations get their async backups convert to sync backups.
+     *
+     * A sync window of 1 means that every BackupAwareOperation get their async backups converted to sync backups. This
+     * is also the smallest legal value for the sync window.
+     *
+     * There is some randomization going on to prevent resonance. So with a sync window of n, not every n'th BackupAwareOperation
+     * operation is getting its async backups converted to sync.
+     *
+     * This property only has meaning when backpressure is enabled.
      */
     public static final String PROP_BACKPRESSURE_SYNCWINDOW = "hazelcast.backpressure.syncwindow";
+
+    /**
+     * Control the maximum timeout in millis to wait for an invocation space to be available.
+     *
+     * If an invocation can't be made because there are too many pending invocations, then an exponential backoff is done
+     * to give the system time to deal with the backlog of invocations. This property control how long an invocation is
+     * allowed to wait before getting a {@link com.hazelcast.core.HazelcastOverloadException}.
+     *
+     * The value need to be equal or larger than 0.
+     */
+    public static final String PROP_BACKPRESSURE_BACKOFF_TIMEOUT_MILLIS
+            = "hazelcast.backpressure.backoff.timeout.millis";
+
+    /**
+     * The maximum number of concurrent invocations per partition.
+     *
+     * To prevent the system overloading, HZ can apply a constrain on the number of concurrent invocations. If the maximum
+     * number of concurrent invocations has exceeded and a new invocation comes in, then an exponential back-off is applied
+     * till eventually a timeout happens or there is room for the invocation.
+     *
+     * By default it is configured as 100, so with 271 partitions that would give (271+1)*100=27200 concurrent invocations from a
+     * single member. The +1 is for generic operations. The reason why 100 is chosen is:
+     * - there can be concurrent operations that touch a lot of partitions which consume more than 1 invocation
+     * - certain methods like those from the IExecutor or ILock are also invocations and they can be very long running.
+     *
+     * No promise is made of the invocations are tracked per partition, or if there is a general pool of invocations.
+     */
+    public static final String PROP_BACKPRESSURE_MAX_CONCURRENT_INVOCATIONS_PER_PARTITION
+            = "hazelcast.backpressure.max.concurrent.invocations.per.partition";
+
+
+
 
     /**
      * forces the jcache provider which can have values client or server to force provider type,
@@ -231,6 +286,8 @@ public class GroupProperties {
     public final GroupProperty PERFORMANCE_MONITORING_DELAY_SECONDS;
 
     public final GroupProperty IO_THREAD_COUNT;
+
+    public final GroupProperty IO_BALANCER_INTERVAL_SECONDS;
 
     public final GroupProperty EVENT_QUEUE_CAPACITY;
 
@@ -308,6 +365,8 @@ public class GroupProperties {
 
     public final GroupProperty MAP_REPLICA_SCHEDULED_TASK_DELAY_SECONDS;
 
+    public final GroupProperty MAP_EXPIRY_DELAY_SECONDS;
+
     public final GroupProperty PARTITION_COUNT;
 
     public final GroupProperty LOGGING_TYPE;
@@ -381,7 +440,8 @@ public class GroupProperties {
 
     public final GroupProperty BACKPRESSURE_ENABLED;
     public final GroupProperty BACKPRESSURE_SYNCWINDOW;
-
+    public final GroupProperty BACKPRESSURE_BACKOFF_TIMEOUT_MILLIS;
+    public final GroupProperty BACKPRESSURE_MAX_CONCURRENT_INVOCATIONS_PER_PARTITION;
     /**
      * @param config
      */
@@ -397,6 +457,7 @@ public class GroupProperties {
         VERSION_CHECK_ENABLED = new GroupProperty(config, PROP_VERSION_CHECK_ENABLED, "true");
         PREFER_IPv4_STACK = new GroupProperty(config, PROP_PREFER_IPv4_STACK, "true");
         IO_THREAD_COUNT = new GroupProperty(config, PROP_IO_THREAD_COUNT, "3");
+        IO_BALANCER_INTERVAL_SECONDS = new GroupProperty(config, PROP_IO_BALANCER_INTERVAL_SECONDS, "20");
 
         //-1 means that the value is worked out dynamically.
         PARTITION_OPERATION_THREAD_COUNT = new GroupProperty(config, PROP_PARTITION_OPERATION_THREAD_COUNT, "-1");
@@ -444,6 +505,7 @@ public class GroupProperties {
         INITIAL_WAIT_SECONDS = new GroupProperty(config, PROP_INITIAL_WAIT_SECONDS, "0");
         MAP_REPLICA_SCHEDULED_TASK_DELAY_SECONDS
                 = new GroupProperty(config, PROP_MAP_REPLICA_SCHEDULED_TASK_DELAY_SECONDS, "10");
+        MAP_EXPIRY_DELAY_SECONDS = new GroupProperty(config, PROP_MAP_EXPIRY_DELAY_SECONDS, "10");
         PARTITION_COUNT = new GroupProperty(config, PROP_PARTITION_COUNT, "271");
         LOGGING_TYPE = new GroupProperty(config, PROP_LOGGING_TYPE, "jdk");
         ENABLE_JMX = new GroupProperty(config, PROP_ENABLE_JMX, "false");
@@ -485,8 +547,14 @@ public class GroupProperties {
         MIGRATION_MIN_DELAY_ON_MEMBER_REMOVED_SECONDS
                 = new GroupProperty(config, PROP_MIGRATION_MIN_DELAY_ON_MEMBER_REMOVED_SECONDS, "5");
 
-        BACKPRESSURE_ENABLED = new GroupProperty(config, PROP_BACKPRESSURE_ENABLED, "false");
-        BACKPRESSURE_SYNCWINDOW = new GroupProperty(config, PROP_BACKPRESSURE_SYNCWINDOW, "100");
+        BACKPRESSURE_ENABLED
+                = new GroupProperty(config, PROP_BACKPRESSURE_ENABLED, "false");
+        BACKPRESSURE_SYNCWINDOW
+                = new GroupProperty(config, PROP_BACKPRESSURE_SYNCWINDOW, "100");
+        BACKPRESSURE_MAX_CONCURRENT_INVOCATIONS_PER_PARTITION
+                = new GroupProperty(config, PROP_BACKPRESSURE_MAX_CONCURRENT_INVOCATIONS_PER_PARTITION, "100");
+        BACKPRESSURE_BACKOFF_TIMEOUT_MILLIS
+                = new GroupProperty(config, PROP_BACKPRESSURE_BACKOFF_TIMEOUT_MILLIS, "60000");
     }
 
     public static class GroupProperty {

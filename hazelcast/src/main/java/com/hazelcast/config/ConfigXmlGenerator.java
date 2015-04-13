@@ -107,7 +107,7 @@ public class ConfigXmlGenerator {
 
         executorXmlGenerator(xml, config);
 
-        partititonGroupXmlGenerator(xml, config);
+        partitionGroupXmlGenerator(xml, config);
 
         listenerXmlGenerator(xml, config);
 
@@ -129,7 +129,7 @@ public class ConfigXmlGenerator {
         }
     }
 
-    private void partititonGroupXmlGenerator(StringBuilder xml, Config config) {
+    private void partitionGroupXmlGenerator(StringBuilder xml, Config config) {
         final PartitionGroupConfig pg = config.getPartitionGroupConfig();
         if (pg != null) {
             xml.append("<partition-group enabled=\"").append(pg.isEnabled())
@@ -321,6 +321,8 @@ public class ConfigXmlGenerator {
 
             mapEntryListenerConfigXmlGenerator(xml, m);
 
+            mapPartitionLostListenerConfigXmlGenerator(xml, m);
+
             mapPartitionStrategyConfigXmlGenerator(xml, m);
 
         }
@@ -355,6 +357,20 @@ public class ConfigXmlGenerator {
         }
     }
 
+    private void mapPartitionLostListenerConfigXmlGenerator(StringBuilder xml, MapConfig m) {
+        if (!m.getPartitionLostListenerConfigs().isEmpty()) {
+            xml.append("<partition-lost-listeners>");
+            for (MapPartitionLostListenerConfig c : m.getPartitionLostListenerConfigs()) {
+                xml.append("<partition-lost-listener>");
+                final String clazz = c.getImplementation()
+                        != null ? c.getImplementation().getClass().getName() : c.getClassName();
+                xml.append(clazz);
+                xml.append("</partition-lost-listener>");
+            }
+            xml.append("</partition-lost-listeners>");
+        }
+    }
+
     private void mapIndexConfigXmlGenerator(StringBuilder xml, MapConfig m) {
         if (!m.getMapIndexConfigs().isEmpty()) {
             xml.append("<indexes>");
@@ -373,6 +389,7 @@ public class ConfigXmlGenerator {
             final WanReplicationRef wan = m.getWanReplicationRef();
             xml.append("<wan-replication-ref name=\"").append(wan.getName()).append("\">");
             xml.append("<merge-policy>").append(wan.getMergePolicy()).append("</merge-policy>");
+            xml.append("<republishing-enabled>").append(wan.isRepublishingEnabled()).append("</republishing-enabled>");
             xml.append("</wan-replication-ref>");
         }
     }

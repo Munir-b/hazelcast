@@ -72,8 +72,9 @@
     <suppress checks="JavadocType" files="com.hazelcast.cache.impl[\\/]"/>
     <suppress checks="JavadocMethod" files="com.hazelcast.cache.impl[\\/]"/>
     <suppress checks="JavadocVariable" files="com.hazelcast.cache.impl[\\/]"/>
+    <suppress checks="MethodCount" files="com.hazelcast.cache.ICache"/>
     <suppress checks="MethodCount" files="com.hazelcast.client.cache.impl.AbstractClientCacheProxy"/>
-    <suppress checks="ClassDataAbstractionCoupling"
+    <suppress checks="ClassDataAbstractionCoupling|MethodCount|"
               files="com.hazelcast.client.cache.impl.AbstractClientInternalCacheProxy"/>
     <suppress checks="MethodCount" files="com.hazelcast.cache.impl.CacheRecordStore"/>
     <suppress checks="MethodCount" files="com.hazelcast.cache.impl.CacheService"/>
@@ -84,6 +85,7 @@
     <suppress checks="MethodCount|ParameterNumber|ClassFanOutComplexity|ClassDataAbstractionCoupling"
               files="com.hazelcast.cache.impl.AbstractCacheRecordStore"/>
     <suppress checks="MethodCount|ParameterNumber" files="com.hazelcast.cache.impl.AbstractCacheService"/>
+    <suppress checks="MethodCount" files="com.hazelcast.cache.impl.nearcache.impl.store.AbstractNearCacheRecordStore"/>
     <suppress checks="ParameterNumber" files="com.hazelcast.cache.impl.ICacheService"/>
     <suppress checks="NPathComplexity"
               files="com.hazelcast.cache.impl.eviction.impl.evaluator.AbstractEvictionPolicyEvaluator"/>
@@ -109,6 +111,7 @@
     <suppress checks="MethodCount" files="com.hazelcast.config.MapConfig"/>
     <suppress checks="MethodCount" files="com.hazelcast.config.CacheSimpleConfig"/>
     <suppress checks="ExecutableStatementCount" files="com.hazelcast.config.CacheConfig"/>
+    <suppress checks="ExecutableStatementCount" files="com.hazelcast.config.MapConfig"/>
     <!---->
     <suppress checks="MethodCount" files="com.hazelcast.config.SerializationConfig"/>
     <suppress checks="MethodCount" files="com.hazelcast.config.XmlConfigBuilder"/>
@@ -172,6 +175,7 @@
     <suppress checks="MethodCount" files="com.hazelcast.client.proxy.ClientExecutorServiceProxy"/>
     <suppress checks="MethodCount" files="com.hazelcast.client.impl.HazelcastClientProxy"/>
     <suppress checks="CyclomaticComplexity" files="com.hazelcast.client.impl.client.ClientPortableFactory"/>
+    <suppress checks="ClassDataAbstractionCoupling" files="com.hazelcast.client.impl.client.ClientPortableFactory"/>
     <suppress checks="MethodCount" files="com.hazelcast.client.config.ClientConfig"/>
     <suppress checks="MethodCount" files="com.hazelcast.client.connection.nio.ClientConnection"/>
     <suppress checks="MethodCount" files="com.hazelcast.client.impl.ClientEngineImpl"/>
@@ -186,14 +190,26 @@
     <suppress checks="ClassFanOutComplexity|ClassDataAbstractionCoupling"
               files="com.hazelcast.client.connection.nio.ClientConnectionManagerImpl"/>
 
-    <!--TODO: we will refactor these External utils-->
-    <suppress checks="" files="com.hazelcast.client.impl.protocol.util[\\/]"/>
-    <!--TODO we will refactor these encode-decode code-->
-    <suppress checks="" files="com.hazelcast.client.impl.protocol.map[\\/]"/>
 
     <suppress checks="JavadocMethod" files="com.hazelcast.client.impl[\\/]"/>
     <suppress checks="JavadocType" files="com.hazelcast.client.impl[\\/]"/>
     <suppress checks="JavadocMethod" files="com.hazelcast.client.impl[\\/]"/>
+
+    <!--CLIENT PROTOCOL-->
+    <!--TODO: we will refactor these External utils-->
+    <suppress checks="" files="com.hazelcast.client.impl.protocol.util[\\/]"/>
+    <!--TODO we will refactor these encode-decode code-->
+    <!--Parameters class are gonna be auto generated-->
+    <suppress checks="" files="com.hazelcast.client.impl.protocol.map.*Parameters"/>
+    <suppress checks="" files="com.hazelcast.client.impl.protocol.*Parameters"/>
+    <suppress checks="MethodCount" files="com.hazelcast.client.impl.protocol.ClientMessage"/>
+    <suppress checks="JavadocType" files="com.hazelcast.client.impl.protocol.ClientMessageType"/>
+    <suppress checks="JavadocVariable" files="com.hazelcast.client.impl.protocol.ClientMessageType"/>
+
+    <suppress checks="JavadocMethod" files="com.hazelcast.client.impl[\\/]"/>
+    <suppress checks="JavadocType" files="com.hazelcast.client.impl[\\/]"/>
+
+    <suppress checks="ClassFanOutComplexity" files="com.hazelcast.client.cache.impl.AbstractClientInternalCacheProxy"/>
 
 
     <!-- Monitor -->
@@ -222,10 +238,10 @@
     <suppress checks="CyclomaticComplexity" files="com.hazelcast.query.SqlPredicate"/>
     <suppress checks="NPathComplexity" files="com.hazelcast.query.SqlPredicate"/>
     <suppress checks="MethodLength" files="com.hazelcast.query.SqlPredicate"/>
-    <suppress checks="MethodLength" files="com.hazelcast.query.impl.ReflectionHelper"/>
-    <suppress checks="CyclomaticComplexity" files="com.hazelcast.query.impl.ReflectionHelper"/>
-    <suppress checks="NPathComplexity" files="com.hazelcast.query.impl.ReflectionHelper"/>
-    <suppress checks="ReturnCount" files="com.hazelcast.query.impl.ReflectionHelper"/>
+    <suppress checks="MethodLength" files="com.hazelcast.query.impl.getters.ReflectionHelper"/>
+    <suppress checks="CyclomaticComplexity" files="com.hazelcast.query.impl.getters.ReflectionHelper"/>
+    <suppress checks="NPathComplexity" files="com.hazelcast.query.impl.getters.ReflectionHelper"/>
+    <suppress checks="ReturnCount" files="com.hazelcast.query.impl.getters.ReflectionHelper"/>
 
     <!-- hazelcast-wm -->
     <suppress checks="JavadocMethod" files="com.hazelcast.web[\\/]"/>
@@ -267,24 +283,25 @@
     <!-- since this class needs to manage services, it knows about them. So it is fine to have lots
          of dependencies on these classes-->
     <suppress checks="ClassDataAbstractionCoupling" files="com.hazelcast.spi.impl.ServiceManager"/>
-    <!-- the following suppressions are ok because these classes are the heart of the system. Although
-         in the future we need to get rid of classes knowing about node/node-engine because it is a
-         god-object -->
-    <suppress checks="ClassFanOutComplexity" files="com.hazelcast.spi.impl.operationservice.impl.OperationServiceImpl"/>
-    <suppress checks="ClassDataAbstractionCoupling" files="com.hazelcast.spi.impl.operationservice.impl.OperationServiceImpl"/>
-    <suppress checks="MethodCount" files="com.hazelcast.spi.impl.operationservice.impl.OperationServiceImpl"/>
+
+    <suppress checks="MethodCount"
+              files="com.hazelcast.spi.impl.operationservice.impl.OperationServiceImpl"/>
+     <!-- the invocation just has many parameters because there are a lot of things to tune.-->
+    <suppress checks="ParameterNumber"
+              files="com.hazelcast.spi.impl.operationservice.impl.InvocationImpl"/>
+    <!-- the partition-invocation just has many parameters because there are a lot of things to tune.-->
+    <suppress checks="ParameterNumber"
+              files="com.hazelcast.spi.impl.operationservice.impl.PartitionInvocation"/>
+    <!-- these need to be solved-->
+    <suppress checks="NPathComplexity"
+              files="com.hazelcast.spi.impl.operationservice.impl.InvocationFuture"/>
+    <suppress checks="ReturnCount"
+              files="com.hazelcast.spi.impl.operationservice.impl.InvocationFuture"/>
+    <suppress checks="CyclomaticComplexity"
+              files="com.hazelcast.spi.impl.operationservice.impl.InvocationFuture"/>
 
     <suppress checks="ClassDataAbstractionCoupling|MethodCount"
               files="com.hazelcast.spi.impl.eventservice.impl.EventServiceImpl"/>
-    <!-- the invocation just has many parameters because there are a lot of things to tune.-->
-    <suppress checks="ParameterNumber" files="com.hazelcast.spi.impl.operationservice.impl.InvocationImpl"/>
-    <!-- the partition-invocation just has many parameters because there are a lot of things to tune.-->
-    <suppress checks="ParameterNumber" files="com.hazelcast.spi.impl.operationservice.impl.PartitionInvocation"/>
-
-    <!-- these need to be solved-->
-    <suppress checks="NPathComplexity" files="com.hazelcast.spi.impl.operationservice.impl.InvocationFuture"/>
-    <suppress checks="ReturnCount" files="com.hazelcast.spi.impl.operationservice.impl.InvocationFuture"/>
-    <suppress checks="CyclomaticComplexity" files="com.hazelcast.spi.impl.operationservice.impl.InvocationFuture"/>
 
     <!-- Transaction -->
     <suppress checks="JavadocMethod" files="com.hazelcast.transaction[\\/]"/>
@@ -401,8 +418,13 @@
    -->
     <suppress checks="" files="com.hazelcast.util.ConcurrentReferenceHashMap"/>
 
+    <suppress checks="" files="com.hazelcast.util.DebugUtil"/>
+
     <!-- Too complex to change, I am leaving it to implementer -->
     <suppress checks="" files="com.hazelcast.util.Base64"/>
+
+    <suppress checks="" files="com.hazelcast.util.DebugUtil"/>
+
 
     <suppress checks="" files="com.hazelcast.util.HashUtil"/>
     <suppress checks="MagicNumber" files="com.hazelcast.util.QuickMath"/>
@@ -428,7 +450,7 @@
     <suppress checks="JavadocMethod" files="com.hazelcast.nio[\\/]"/>
     <suppress checks="JavadocType" files="com.hazelcast.nio[\\/]"/>
     <suppress checks="JavadocVariable" files="com.hazelcast.nio[\\/]"/>
-    <suppress checks="ClassDataAbstractionCoupling" files="com.hazelcast.nio.tcp.TcpIpConnectionManager"/>
+    <suppress checks="ExecutableStatementCount|ClassDataAbstractionCoupling|ClassFanOutComplexity" files="com.hazelcast.nio.tcp.TcpIpConnectionManager"/>
 
     <suppress checks="MethodCount|MagicNumber" files="com.hazelcast.nio.serialization.ByteArrayObjectDataInput"/>
     <suppress checks="MethodCount|MagicNumber" files="com.hazelcast.nio.serialization.ByteArrayObjectDataOutput"/>
@@ -479,6 +501,7 @@
 
     <!-- Spring-->
     <suppress checks="MethodCount" files="com.hazelcast.spring.HazelcastConfigBeanDefinitionParser"/>
+    <suppress checks="MethodLength" files="com.hazelcast.spring.HazelcastConfigBeanDefinitionParser"/>
     <suppress checks="CyclomaticComplexity|NPathComplexity" files="com.hazelcast.spring.HazelcastConfigBeanDefinitionParser"/>
 
     <!-- Spring Framework breaks the rule IllegalTypeCheck in its own implementation -->

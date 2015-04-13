@@ -4,23 +4,19 @@ import com.hazelcast.client.HazelcastClientNotActiveException;
 import com.hazelcast.client.connection.ClientConnectionManager;
 import com.hazelcast.client.connection.nio.ClientConnection;
 import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
-import com.hazelcast.client.impl.client.ClientRequest;
-import com.hazelcast.client.impl.client.ClientResponse;
 import com.hazelcast.client.impl.client.RemoveAllListeners;
+import com.hazelcast.client.impl.protocol.ClientMessage;
+import com.hazelcast.client.impl.protocol.ClientMessageType;
+import com.hazelcast.client.impl.protocol.parameters.ExceptionResultParameters;
 import com.hazelcast.client.spi.ClientExecutionService;
 import com.hazelcast.client.spi.ClientInvocationService;
 import com.hazelcast.client.spi.ClientPartitionService;
 import com.hazelcast.client.spi.EventHandler;
-import com.hazelcast.cluster.client.ClientPingRequest;
-import com.hazelcast.core.ICompletableFuture;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.Logger;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.Connection;
 import com.hazelcast.nio.ConnectionListener;
-import com.hazelcast.nio.Packet;
-import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.nio.serialization.SerializationService;
 import com.hazelcast.spi.exception.TargetDisconnectedException;
 import com.hazelcast.util.ConstructorFunction;
 
@@ -70,11 +66,6 @@ abstract class ClientInvocationServiceSupport implements ClientInvocationService
     }
 
     @Override
-    public <T> ICompletableFuture<T> invokeOnTarget(ClientRequest request, Address target) throws Exception {
-        return new ClientInvocation(client, request, target).invoke();
-    }
-
-    @Override
     public boolean isRedoOperation() {
         return client.getClientConfig().getNetworkConfig().isRedoOperation();
     }
@@ -84,27 +75,32 @@ abstract class ClientInvocationServiceSupport implements ClientInvocationService
             throw new HazelcastClientNotActiveException("Client is shut down");
         }
         registerInvocation(invocation);
-        invocation.setSendConnection(connection);
-        final SerializationService ss = client.getSerializationService();
-        final Data data = ss.toData(invocation.getRequest());
-        Packet packet = new Packet(data, invocation.getPartitionId());
-        if (!isAllowedToSendRequest(connection, invocation.getRequest()) || !connection.write(packet)) {
-            final int callId = invocation.getRequest().getCallId();
+
+        ClientMessage clientMessage = invocation.getClientMessage();
+        if (!isAllowedToSendRequest(connection, invocation) || !writeToConnection(connection, clientMessage)) {
+            final int callId = clientMessage.getCorrelationId();
             deRegisterCallId(callId);
             deRegisterEventHandler(callId);
             throw new IOException("Packet not send to " + connection.getRemoteEndpoint());
         }
+        invocation.setSendConnection(connection);
     }
 
-    private boolean isAllowedToSendRequest(ClientConnection connection, ClientRequest request) {
+    private boolean writeToConnection(ClientConnection connection, ClientMessage clientMessage) {
+        clientMessage.setFlags(ClientMessage.BEGIN_AND_END_FLAGS);
+        return connection.write(clientMessage);
+    }
+
+    private boolean isAllowedToSendRequest(ClientConnection connection, ClientInvocation invocation) {
         if (!connection.isHeartBeating()) {
-            if (request instanceof ClientPingRequest || request instanceof RemoveAllListeners) {
-                //ping request and removeAllListeners should be send even though heart is not beating
+            if (invocation.shouldBypassHeartbeatCheck()) {
+                //ping and removeAllListeners should be send even though heart is not beating
                 return true;
             }
 
             if (logger.isFinestEnabled()) {
-                logger.warning("Connection is not heart-beating, won't write request -> " + request);
+                logger.warning("Connection is not heart-beating, won't write client message -> "
+                        + invocation.getClientMessage());
             }
             return false;
         }
@@ -112,11 +108,12 @@ abstract class ClientInvocationServiceSupport implements ClientInvocationService
     }
 
     private void registerInvocation(ClientInvocation clientInvocation) {
-        final int callId = newCallId();
-        clientInvocation.getRequest().setCallId(callId);
-        callIdMap.put(callId, clientInvocation);
+        short protocolVersion = client.getProtocolVersion();
+        final int correlationId = newCorrelationId();
+        clientInvocation.getClientMessage().setCorrelationId(correlationId).setVersion(protocolVersion);
+        callIdMap.put(correlationId, clientInvocation);
         if (clientInvocation.getHandler() != null) {
-            eventHandlerMap.put(callId, clientInvocation);
+            eventHandlerMap.put(correlationId, clientInvocation);
         }
     }
 
@@ -154,7 +151,7 @@ abstract class ClientInvocationServiceSupport implements ClientInvocationService
             final ClientInvocation invocation = entry.getValue();
             if (invocation.getSendConnection().equals(connection)) {
                 iter.remove();
-                invocation.notify(responseCtor.createNew(null));
+                invocation.notifyException(responseCtor.createNew(null));
                 eventHandlerMap.remove(entry.getKey());
             }
         }
@@ -163,7 +160,7 @@ abstract class ClientInvocationServiceSupport implements ClientInvocationService
             final ClientInvocation invocation = iterator.next();
             if (invocation.getSendConnection().equals(connection)) {
                 iterator.remove();
-                invocation.notify(responseCtor.createNew(null));
+                invocation.notifyException(responseCtor.createNew(null));
             }
         }
 
@@ -177,7 +174,9 @@ abstract class ClientInvocationServiceSupport implements ClientInvocationService
     @Override
     public void heartBeatStopped(Connection connection) {
         final RemoveAllListeners request = new RemoveAllListeners();
-        new ClientInvocation(client, request, connection).invoke();
+        ClientInvocation removeListenerInvocation = new ClientInvocation(client, request, connection);
+        removeListenerInvocation.setBypassHeartbeatCheck(true);
+        removeListenerInvocation.invoke();
 
         final Address remoteEndpoint = connection.getEndPoint();
         final Iterator<ClientInvocation> iterator = eventHandlerMap.values().iterator();
@@ -187,7 +186,7 @@ abstract class ClientInvocationServiceSupport implements ClientInvocationService
             final ClientInvocation clientInvocation = iterator.next();
             if (clientInvocation.getSendConnection().equals(connection)) {
                 iterator.remove();
-                clientInvocation.notify(response);
+                clientInvocation.notifyException(response);
             }
         }
     }
@@ -266,12 +265,30 @@ abstract class ClientInvocationServiceSupport implements ClientInvocationService
 
 
     @Override
-    public void handlePacket(Packet packet) {
-        responseThread.workQueue.add(packet);
+    public void handleClientMessage(ClientMessage message, Connection connection) {
+        responseThread.workQueue.add(new ClientPacket((ClientConnection) connection, message));
+    }
+
+    private static class ClientPacket {
+        private final ClientConnection clientConnection;
+        private final ClientMessage clientMessage;
+
+        public ClientPacket(ClientConnection clientConnection, ClientMessage clientMessage) {
+            this.clientConnection = clientConnection;
+            this.clientMessage = clientMessage;
+        }
+
+        public ClientConnection getClientConnection() {
+            return clientConnection;
+        }
+
+        public ClientMessage getClientMessage() {
+            return clientMessage;
+        }
     }
 
     private class ResponseThread extends Thread {
-        private final BlockingQueue<Packet> workQueue = new LinkedBlockingQueue<Packet>();
+        private final BlockingQueue<ClientPacket> workQueue = new LinkedBlockingQueue<ClientPacket>();
 
         public ResponseThread(ThreadGroup threadGroup, String name, ClassLoader classLoader) {
             super(threadGroup, name);
@@ -291,7 +308,7 @@ abstract class ClientInvocationServiceSupport implements ClientInvocationService
 
         private void doRun() {
             while (true) {
-                Packet task;
+                ClientPacket task;
                 try {
                     task = workQueue.take();
                 } catch (InterruptedException e) {
@@ -308,13 +325,10 @@ abstract class ClientInvocationServiceSupport implements ClientInvocationService
             }
         }
 
-        private void process(Packet packet) {
-            final ClientConnection conn = (ClientConnection) packet.getConn();
+        private void process(ClientPacket packet) {
+            final ClientConnection conn = packet.getClientConnection();
             try {
-                final ClientResponse clientResponse = client.getSerializationService().toObject(packet.getData());
-                final int callId = clientResponse.getCallId();
-                final Data response = clientResponse.getResponse();
-                handlePacket(response, clientResponse.isError(), callId);
+                handleClientMessage(packet.getClientMessage());
             } catch (Exception e) {
                 logger.severe("Failed to process task: " + packet + " on responseThread :" + getName());
             } finally {
@@ -322,21 +336,29 @@ abstract class ClientInvocationServiceSupport implements ClientInvocationService
             }
         }
 
-        private void handlePacket(Object response, boolean isError, int callId) {
-            final ClientInvocation future = deRegisterCallId(callId);
+        private void handleClientMessage(ClientMessage clientMessage) throws ClassNotFoundException,
+                IllegalAccessException, InstantiationException {
+            int correlationId = clientMessage.getCorrelationId();
+
+            final ClientInvocation future = deRegisterCallId(correlationId);
             if (future == null) {
-                logger.warning("No call for callId: " + callId + ", response: " + response);
+                logger.warning("No call for callId: " + correlationId + ", response: " + clientMessage);
                 return;
             }
-            if (isError) {
-                response = client.getSerializationService().toObject(response);
+
+            if (ClientMessageType.EXCEPTION.ordinal() == clientMessage.getMessageType()) {
+                ExceptionResultParameters exceptionResultParameters = ExceptionResultParameters.decode(clientMessage);
+                Class<?> clazz = Class.forName(exceptionResultParameters.className);
+                Throwable exception = (Throwable) clazz.newInstance();
+                future.notifyException(exception);
+            } else {
+                future.notify(clientMessage);
             }
-            future.notify(response);
         }
 
     }
 
-    private int newCallId() {
+    private int newCorrelationId() {
         return callIdIncrementer.incrementAndGet();
     }
 

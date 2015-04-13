@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2013, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2015, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,41 +17,37 @@
 package com.hazelcast.nio.tcp;
 
 import com.hazelcast.client.ClientTypes;
+import com.hazelcast.client.impl.protocol.ClientMessage;
+import com.hazelcast.client.impl.protocol.util.ClientMessageBuilder;
 import com.hazelcast.nio.ConnectionType;
 import com.hazelcast.nio.IOService;
-import com.hazelcast.nio.Packet;
 
 import java.nio.ByteBuffer;
 
 import static com.hazelcast.util.StringUtil.bytesToString;
 
-class SocketClientDataReaderNew implements SocketReader {
+class SocketClientDataReaderNew
+        implements SocketReader {
 
     private static final int TYPE_BYTE = 3;
+    private final ClientMessageBuilder builder;
 
-    final TcpIpConnection connection;
-    final IOService ioService;
-    Packet packet;
+    private final TcpIpConnection connection;
 
-    public SocketClientDataReaderNew(TcpIpConnection connection) {
+    public SocketClientDataReaderNew(final TcpIpConnection connection) {
         this.connection = connection;
-        this.ioService = connection.getConnectionManager().ioService;
+        this.builder = new ClientMessageBuilder(new ClientMessageBuilder.MessageHandler() {
+            @Override
+            public void handleMessage(ClientMessage message) {
+                IOService ioService = connection.getConnectionManager().getIOHandler();
+                ioService.handleClientMessage(message, connection);
+            }
+        });
     }
 
-    public void read(ByteBuffer inBuffer) throws Exception {
-        while (inBuffer.hasRemaining()) {
-            if (packet == null) {
-                packet = new Packet();
-            }
-            boolean complete = packet.readFrom(inBuffer);
-            if (complete) {
-                packet.setConn(connection);
-                ioService.handleClientPacket(packet);
-                packet = null;
-            } else {
-                break;
-            }
-        }
+    public void read(ByteBuffer inBuffer)
+            throws Exception {
+        builder.onData(inBuffer);
     }
 
     public boolean setConnectionType(ByteBuffer inBuffer) {
@@ -70,6 +66,7 @@ class SocketClientDataReaderNew implements SocketReader {
             } else if (ClientTypes.RUBY.equals(type)) {
                 connection.setType(ConnectionType.RUBY_CLIENT);
             } else {
+                final IOService ioService = connection.getConnectionManager().ioService;
                 ioService.getLogger(getClass().getName()).info("Unknown client type: " + type);
                 connection.setType(ConnectionType.BINARY_CLIENT);
             }
@@ -77,4 +74,5 @@ class SocketClientDataReaderNew implements SocketReader {
         }
         return false;
     }
+
 }
