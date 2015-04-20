@@ -384,6 +384,12 @@
                                     ${basedir}/target/coverage.xml
                                 </coberturaReport>
                             </coberturaReports>
+
+                            <jacocoReports>
+                                <jacocoReport>${basedir}/target/site/jacoco.xml</jacocoReport>
+                                <!-- <jacocoReport>${project.reporting.outputDirectory}/jacoco-ut/jacoco.xml</jacocoReport> -->
+                            </jacocoReports>
+
                             <sourceEncoding>UTF-8</sourceEncoding>
 
                             <repoToken>aWY0KKsTpNPidJYq8q1BTXDhxCorXvuSL</repoToken>
